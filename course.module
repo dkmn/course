@@ -370,9 +370,10 @@ function course_ajaj_fulfullment_check($node, $courseObject, $js = FALSE) {
   module_load_include('inc', 'course', 'includes/course.block');
   // Bust cache.
   course_get_course($node, $courseObject->getCourse()->getUser(), TRUE);
-  $block = _course_block_navigation_view();
+  $block = block_load('course', 'navigation');
+  $block_rend = _block_render_blocks(array($block));
   drupal_json_output(array(
-    'content' => $block['content'],
+    'content' => $block_rend['course_navigation']->content['#markup'],
     'complete' => $courseObject->getFulfillment()->isComplete(),
   ));
 }
@@ -981,6 +982,9 @@ function course_enroll($node, $account, $from = NULL, $code = NULL, $status = 1)
       course_enrollment_save($enrollment);
       module_invoke_all('course_enroll', $node, $account, $from, $code, $status);
     }
+
+    // Flush caches.
+    course_access_course('take', $node, $account, TRUE);
 
     return $enrollment;
   }
@@ -1988,14 +1992,11 @@ function course_edit_enrollment_action($object, $context) {
     }
   }
 
-  course_enrollment_save($enrollment);
-  course_report_save($course_report);
-
   $course = course_get_course($node, $account);
   foreach ($course->getObjects() as $key => $courseObject) {
     $coid = $courseObject->getId();
     $fulfillment = $courseObject->getFulfillment();
-    if ($context['course_objects'][$coid] != '') {
+    if ($context['course_objects'][$coid] !== '') {
       // There was a change
 
       if ($context['course_objects'][$coid] == 1) {
@@ -2019,6 +2020,9 @@ function course_edit_enrollment_action($object, $context) {
       $fulfillment->save();
     }
   }
+
+  course_enrollment_save($enrollment);
+  course_report_save($course_report);
 
   drupal_set_message(t('Updated enrollment for %user', array('%user' => $account->name)));
 }
@@ -2238,33 +2242,6 @@ function course_ctools_plugin_directory($owner, $plugin_type) {
 }
 
 /**
- * Implements course_credit_check_completion().
- *
- * Require the user to choose a user type before they claim credit.
- */
-function course_course_credit_check_completion($course_node) {
-  global $user;
-
-  // Check if course user types enabled, has user types, and there is actually valid credit for this course.
-  if (variable_get('course_user_types_enabled', 0) && count(course_user_type_get_options())) {
-    // Check for active credit types. No user checking at this point.
-    // @todo break out into function to get active credit types on a course.
-    $active = FALSE;
-    foreach ($course_node->course_credit as $type) {
-      if ($type->active) {
-        $active = TRUE;
-      }
-    }
-    if ($active) {
-      $enrollment = course_enrollment_load($course_node, $user);
-      if (!$enrollment->user_type && arg(2) == 'course-credit-app') {
-        drupal_goto("node/{$course_node->nid}/course-user-type", array('query' => drupal_get_destination()));
-      }
-    }
-  }
-}
-
-/**
  * Check whether or not a user can self-enroll in a course.
  *
  * This function should be called by any module providing means
@@ -2313,7 +2290,7 @@ function course_access_course($op, $node, $account = NULL, $flush = FALSE, $all 
 
     // Add a default success hook in case no others are returned.
     return array(
-        'success' => TRUE,
+      'success' => TRUE,
     );
   }
 }
@@ -2331,6 +2308,8 @@ function course_enroll_access($node, $account = NULL, $flush = FALSE, $all = FAL
  * Block enrollments when a course has either not yet started or is expired.
  */
 function course_course_access($op, $node, $user) {
+  $enrollment = course_enrollment_load($node->nid, $user->uid);
+
   if ($op == 'enroll') {
     if (!node_access('view', $node)) {
       return array('course_denied' => array(
@@ -2362,6 +2341,7 @@ function course_course_access($op, $node, $user) {
       ));
     }
   }
+
   if ($op == 'take') {
     if (!node_access('view', $node)) {
       return array('course_node_access' => array(
@@ -2372,8 +2352,24 @@ function course_course_access($op, $node, $user) {
       ));
     }
 
-    if ($row = db_query("SELECT * FROM {course_enrollment} WHERE nid = :nid AND uid = :uid", array(':nid' => $node->nid, ':uid' => $user->uid))->fetch()) {
-      if ($row->enroll_end > 0 && REQUEST_TIME > $row->enroll_end) {
+
+    if ($enrollment) {
+
+      // Check if there are any required, unfilled fields on the enrollment.
+      $instances = field_info_instances('course_enrollment', $node->course['enrollment_type']);
+      foreach ($instances as $field_name => $instance) {
+        if ($instance['required'] && !field_get_items('course_enrollment', $enrollment, $field_name)) {
+          return array(
+            'course_enrollment' => array(
+              'success' => FALSE,
+              'header' => t(''),
+              'message' => theme('course_take_course_button', array('node' => $node)),
+            ),
+          );
+        }
+      }
+
+      if ($enrollment->enroll_end > 0 && REQUEST_TIME > $enrollment->enroll_end) {
         return array('course_enrollment_expired' => array(
             'success' => FALSE,
             'header' => t('Enrollment expired'),
@@ -2471,10 +2467,7 @@ function course_report_save($entry) {
  * Clean up course reports and fulfillments for a deleted user.
  */
 function course_user_delete($account) {
-  db_delete('course_report')
-    ->condition('uid', $account->uid)
-    ->execute();
-
+  // Delete any fulfillments.
   db_delete('course_outline_fulfillment')
     ->condition('uid', $account->uid)
     ->execute();
@@ -2824,6 +2817,7 @@ function course_entity_info() {
   $entity_info = array(
     'course_enrollment' => array(
       'label' => t('Course enrollment'),
+      'entity class' => 'Entity',
       'controller class' => 'EntityAPIController',
       'base table' => 'course_enrollment',
       'uri callback' => 'course_enrollment_uri',
@@ -2842,6 +2836,7 @@ function course_entity_info() {
     ),
     'course_enrollment_type' => array(
       'label' => t('Enrollment type'),
+      'entity class' => 'Entity',
       'plural label' => t('Enrollment types'),
       'description' => t('Course enrollment types.'),
       'controller class' => 'EntityAPIControllerExportable',
@@ -2865,6 +2860,7 @@ function course_entity_info() {
     ),
     'course_report' => array(
       'label' => t('Course report'),
+      'entity class' => 'Entity',
       'controller class' => 'EntityAPIController',
       'base table' => 'course_report',
       'uri callback' => 'course_report_uri',
@@ -2887,6 +2883,7 @@ function course_entity_info() {
     ),
     'course_object' => array(
       'label' => t('Course object'),
+      'entity class' => 'Entity',
       'controller class' => 'EntityAPIController',
       'base table' => 'course_outline',
       'uri callback' => 'course_object_uri',
@@ -2909,6 +2906,7 @@ function course_entity_info() {
     ),
     'course_object_fulfillment' => array(
       'label' => t('Course object fulfillment'),
+      'entity class' => 'Entity',
       'controller class' => 'EntityAPIController',
       'base table' => 'course_outline_fulfillment',
       'uri callback' => 'course_object_fulfillment_uri',
@@ -2922,6 +2920,7 @@ function course_entity_info() {
     ),
     'course' => array(
       'label' => t('Course'),
+      'entity class' => 'Entity',
       'controller class' => 'EntityAPIController',
       'base table' => 'course_node',
       'uri callback' => 'course_uri',
@@ -2973,6 +2972,7 @@ function course_entity_property_info_alter(&$info) {
   $info['course_enrollment']['properties']['nid']['type'] = 'node';
   $info['course_enrollment']['properties']['timestamp']['type'] = 'date';
   $info['course_enrollment']['properties']['uid']['type'] = 'user';
+  $info['course_enrollment']['properties']['type']['type'] = 'course_enrollment_type';
 
   $info['course_object']['properties']['duration']['type'] = 'duration';
   $info['course_object']['properties']['enabled']['type'] = 'boolean';
@@ -2990,6 +2990,7 @@ function course_entity_property_info_alter(&$info) {
   $info['course_report']['properties']['nid']['type'] = 'node';
   $info['course_report']['properties']['uid']['type'] = 'user';
   $info['course_report']['properties']['coid']['type'] = 'course_object';
+  $info['course_report']['properties']['complete']['type'] = 'boolean';
 }
 
 /**
@@ -3036,7 +3037,7 @@ function course_enrollment_label($enrollment, $entity_type) {
   if ($enrollment) {
     $node = node_load($enrollment->nid);
     $account = user_load($enrollment->uid);
-    return t("@username's enrollment in @title", array('@username' => $account->name, '@title' => $node->title));
+    return t("@username's enrollment in @title", array('@username' => format_username($account), '@title' => $node->title));
   }
   else {
     return t('Enrollment');
@@ -3063,7 +3064,7 @@ function course_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
     $form['instance']['settings']['course_enrollment_user_field'] = array(
       '#type' => 'checkbox',
       '#title' => t('Show this field on enrollment.'),
-      '#default_value' => !empty($form['#field']['settings']['course_enrollment_user_field']),
+      '#default_value' => !empty($form['#instance']['settings']['course_enrollment_user_field']),
       '#description' => t('If checked, this field will be presented when starting a course.'),
     );
   }
@@ -3071,7 +3072,7 @@ function course_form_field_ui_field_edit_form_alter(&$form, &$form_state) {
     // Add the value to the form so it isn't lost.
     $form['instance']['settings']['course_enrollment'] = array(
       '#type' => 'value',
-      '#value' => !empty($form['#field']['settings']['course_enrollment']),
+      '#value' => !empty($form['#instance']['settings']['course_enrollment']),
     );
   }
 }
@@ -3115,7 +3116,7 @@ function course_enrollment_form_submit($form, &$form_state) {
  * Don't show the user fields that weren't marked as enrollment fields.
  */
 function course_field_access($op, $field, $entity_type, $entity, $account) {
-  if ($entity_type == 'course_enrollment' && $op == 'edit') {
+  if ($entity && $entity_type == 'course_enrollment' && $op == 'edit') {
     $instance = field_info_instance($entity_type, $field['field_name'], $entity->type);
     if (empty($instance['settings']['course_enrollment_user_field'])) {
       return FALSE;
@@ -3147,10 +3148,12 @@ function course_course_credit_map_options() {
 function course_course_credit_map($node, $account, $mappings) {
   if ($enrollment = course_enrollment_load($node, $account)) {
     $entity = entity_load_single('course_enrollment', $enrollment->eid);
-    foreach ((array) $mappings['course_enrollment'] as $field => $values) {
-      foreach ($entity->{$field}[LANGUAGE_NONE] as $item) {
-        if (in_array($item['value'], $values)) {
-          return TRUE;
+    if (!empty($mappings['course_enrollment'])) {
+      foreach ((array) $mappings['course_enrollment'] as $field => $values) {
+        foreach ($entity->{$field}[LANGUAGE_NONE] as $item) {
+          if (in_array($item['value'], $values)) {
+            return TRUE;
+          }
         }
       }
     }

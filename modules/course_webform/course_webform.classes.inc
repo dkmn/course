@@ -8,11 +8,7 @@ class CourseObjectWebform extends CourseObjectNode {
   public function create($node = NULL) {
     $webform = new stdClass;
     $webform->type = 'webform';
-    $webform->title = $this->getTitle();
-    $webform->uid = $this->user->uid;
-    node_object_prepare($webform);
-    node_save($webform);
-    $this->setNode($webform);
+    parent::create($webform);
   }
 
   public function getWarnings() {
@@ -80,6 +76,22 @@ class CourseObjectWebform extends CourseObjectNode {
       $summary['questions'] = l('Edit questions', "node/{$this->getInstanceId()}/webform");
     }
     return $summary;
+  }
+
+  /**
+   * Remove all webform submissions associated with this fulfillment.
+   */
+  public function unEnroll() {
+    parent::unEnroll();
+    $fulfillment = $this->getFulfillment();
+    $node = $this->getNode();
+    if ($sids = $fulfillment->getOption('sids')) {
+      module_load_include('inc', 'webform', 'includes/webform.submissions');
+      foreach ($sids as $sid) {
+        $submission = webform_get_submission($node->nid, $sid);
+        webform_submission_delete($node, $submission);
+      }
+    }
   }
 
 }

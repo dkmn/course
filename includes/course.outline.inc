@@ -255,8 +255,8 @@ function _course_outline_object_form($courseObject = NULL) {
   $rform['options']['#markup'] = l($text, $path, $l_options);
 
   $rform['weight'] = array(
-    '#type' => 'weight',
-    '#delta' => 50,
+    '#type' => 'textfield',
+    '#size' => 3,
     '#default_value' => $courseObject->getOption('weight'),
     '#attributes' => array(
       'class' => array('course-object-weight'),
@@ -368,7 +368,7 @@ function course_outline_overview_form_submit(&$form, &$form_state) {
   // Sort by weight so we can renumber.
   uasort($objects, '_course_outline_overview_form_cmp_function');
 
-  $i = -50;
+  $i = 0;
   foreach ($objects as $object_key => $object) {
     // Get each course object settings saved form values, which are not on the
     // outline overview form.
@@ -407,8 +407,7 @@ function course_outline_overview_form_submit(&$form, &$form_state) {
 
   drupal_set_message('Updated course.');
 
-  // @todo use form #redirect instead of drupal_goto()?
-  drupal_goto("node/$node->nid/course-outline");
+  $form_state['redirect'] = "node/$node->nid/course-outline";
 }
 
 /**
@@ -426,6 +425,7 @@ function course_outline_list($node) {
   // Iterate over objects.
   $workflow = array();
   $prev_obj = NULL;
+  $img = NULL;
   foreach ($course->getObjects() as $key => $courseObject) {
     $step = array();
     $step['id'] = 'course-object-' . $courseObject->getId();
@@ -488,7 +488,7 @@ function course_outline_list($node) {
     $prev_obj = clone $courseObject;
   }
 
-  if ($prev_obj && $prev_obj->getFulfillment()->isComplete()) {
+  if ($course->getTracker()->getOption('complete')) {
     $workflow[] = array(
       'data' => $img . ' ' . l(t('Complete'), "node/$node->nid/course-complete", array('html' => TRUE)),
       'id' => 'complete',

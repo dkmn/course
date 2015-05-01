@@ -128,8 +128,10 @@ abstract class CourseObject extends CourseHandler {
         $course->setActive($this->getId());
         $courseObjects = $course->getObjects();
 
-        // Deny object access to non-enrolled users.
-        if (!course_enrollment_check($this->getCourseNid(), $account->uid)) {
+        // Deny object access to non-enrolled users or users who cannot take
+        // this course.
+        $result = course_access_course('take', $this->getCourse()->getNode(), $account);
+        if (!course_enrollment_check($this->getCourseNid(), $account->uid) || !$result['success']) {
           return FALSE;
         }
         else if ($courseObjects[0]->getId() == $this->getId()) {
@@ -343,9 +345,8 @@ abstract class CourseObject extends CourseHandler {
       );
 
       // Check for multiple instances.
-      $sql = "SELECT count(coid) FROM {course_outline} WHERE module = '%s' AND object_type = '%s' AND instance = '%s'";
       if (db_query("SELECT count(coid) FROM {course_outline} WHERE module = :module AND object_type = :object_type AND instance = :instance", array(':module' => $config['module'], ':object_type' => $config['object_type'], ':instance' => $config['instance']))->fetchField() > 1) {
-        $form['delete_instance']['#description'] = t('<span class="error"><strong>WARNING</strong></span>: multiple course objects link to this instance. Deleting the instance might break the other course objects that use it.');
+        $form['delete']['delete_instance']['#description'] = t('<span class="error"><strong>WARNING</strong></span>: multiple course objects link to this instance. Deleting the instance might break the other course objects that use it.');
       }
     }
 
@@ -967,7 +968,7 @@ abstract class CourseObject extends CourseHandler {
    *   if the object can clone but with caveats.
    */
   function getCloneAbility() {
-    return t('The course object %object cannot be cloned. A new instance will be created.', array('%object' => $this->getTitle()));
+    return FALSE;
   }
 
   /**
@@ -1065,9 +1066,10 @@ class CourseObjectFulfillment extends CourseHandler {
 
     $this->courseObject = $courseObject;
     $sql = "SELECT * FROM {course_outline_fulfillment} WHERE coid = %d AND uid = %d";
-    $fulfillment = db_query("SELECT * FROM {course_outline_fulfillment} WHERE coid = :coid AND uid = :uid", array(':coid' => $this->courseObject->getId(), ':uid' => $user->uid))->fetch(PDO::FETCH_ASSOC);
-
-    $this->setOptions($fulfillment);
+    if (!$courseObject->isTemporary()) {
+      $fulfillment = db_query("SELECT * FROM {course_outline_fulfillment} WHERE coid = :coid AND uid = :uid", array(':coid' => $this->courseObject->getId(), ':uid' => $user->uid))->fetch(PDO::FETCH_ASSOC);
+      $this->setOptions($fulfillment);
+    }
 
     // Set course object ID.
     $this->setOption('coid', $this->courseObject->getId());
@@ -1153,7 +1155,9 @@ abstract class CourseObjectNode extends CourseObject {
   public function __construct($object, $user = NULL, $course = NULL) {
     // Pass configuration to parent.
     parent::__construct($object, $user, $course);
-    $this->node = node_load($this->getInstanceId());
+    if ($this->getInstanceId() && $node = node_load($this->getInstanceId())) {
+      $this->node = clone $node;
+    }
   }
 
   /**
@@ -1256,7 +1260,7 @@ abstract class CourseObjectNode extends CourseObject {
    *   A node or node ID.
    */
   public function setNode($node) {
-    $this->node = $node;
+    $this->node = clone $node;
     $this->setInstanceId($this->node->nid);
   }
 
