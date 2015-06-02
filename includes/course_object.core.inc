@@ -265,7 +265,6 @@ abstract class CourseObject extends CourseHandler {
       '#weight' => 0,
     );
 
-
     $form['outline'] = array(
       '#type' => 'fieldset',
       '#title' => t('Settings'),
@@ -540,13 +539,14 @@ abstract class CourseObject extends CourseHandler {
   }
 
   /**
-   * Get options, with session options having precedence.
+   * Get options, with session options, except weight, having precedence.
    */
   public function getOptions() {
     $options = parent::getOptions();
     $sessionDefaults = array();
     if (isset($options['nid']) && isset($options['coid']) && isset($_SESSION['course'][$options['nid']]['editing'][$options['coid']])) {
       $sessionDefaults += array_filter((array) $_SESSION['course'][$options['nid']]['editing'][$options['coid']], array($this, 'optionFilter'));
+      unset($sessionDefaults['weight']);
     }
     return array_merge($options, (array) $sessionDefaults);
   }
@@ -1274,12 +1274,14 @@ abstract class CourseObjectNode extends CourseObject {
   public function optionsDefinition() {
     $defaults = parent::optionsDefinition();
 
-    $defaults['private'] = 0;
+    $defaults['private'] = !isset($this->node) && $this->hasNodePrivacySupport();
 
     $options = array_intersect_key(node_type_get_names(), $this->getNodeTypes());
     $defaults['node_type'] = key($options);
 
     $defaults['use_node_title'] = 0;
+
+    $defaults['clone_and_reference'] = 0;
 
     return $defaults;
   }
@@ -1336,6 +1338,15 @@ abstract class CourseObjectNode extends CourseObject {
         ),
       ),
     );
+
+    if (module_exists('clone') && !$this->getInstanceId()) {
+      $form['node']['clone_and_reference'] = array(
+        '#title' => t('Clone and reference'),
+        '#type' => 'checkbox',
+        '#description' => t('This will clone the selected content first.'),
+        '#default_value' => $config['clone_and_reference'],
+      );
+    }
 
     $form['node']['use_node_title'] = array(
       '#type' => 'checkbox',
@@ -1431,8 +1442,18 @@ abstract class CourseObjectNode extends CourseObject {
    * On object write, set privacy on this node.
    */
   function save() {
+    if ($this->getOption('clone_and_reference')) {
+      module_load_include('inc', 'clone', 'clone.pages');
+      $new_nid = clone_node_save($this->getOption('instance'));
+      $this->setInstanceId($new_nid);
+      $this->setOption('clone_and_reference', 0);
+    }
+
     parent::save();
-    if ($this->hasNodePrivacySupport() && $this->getOption('private')) {
+
+    $privacy_enabled = $this->hasNodePrivacySupport() && $this->getOption('private');
+    $external_node = $this->getInstanceId() > 0 && $this->getInstanceId() != $this->getCourseNid();
+    if ($privacy_enabled && $external_node) {
       // Ensure that per-node access is enabled.
       $type_settings = content_access_get_settings('all', $this->node->type);
       $type_settings['per_node'] = 1;
