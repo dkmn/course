@@ -71,7 +71,8 @@ class CourseObjectFulfillment extends CourseHandler {
     if (course_enrollment_check($this->getCourseObject()->getCourseNid(), $this->uid)) {
       parent::save();
       // Re-evaluate requirements.
-      $this->getCourseObject()->getCourse()->track();
+      $account = user_load($this->uid);
+      $this->getCourseObject()->getCourse()->track($account);
       return $this;
     }
     else {

@@ -2072,7 +2072,7 @@ function course_edit_enrollment_action_form($a1, $context) {
     if ($account) {
       $fulfillments = array();
       foreach ($objects as $courseObject) {
-        $fulfillments[$courseObject->getId()] = $courseObject->getFulfillment();
+        $fulfillments[$courseObject->getId()] = $courseObject->getFulfillment($account);
       }
     }
 

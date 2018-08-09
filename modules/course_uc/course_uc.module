@@ -202,10 +202,10 @@ function course_uc_init() {
 function course_uc_course_enrollment_insert($enrollment) {
   $node = node_load($enrollment->nid);
   $user = user_load($enrollment->uid);
-  $course = course_get_course($node, $user);
+  $course = course_get_course($node);
   if (course_uc_payment_is_first($course)) {
     foreach ($course->getObjects() as $courseObject) {
-      $courseObject->getFulfillment()->setComplete(TRUE)->save();
+      $courseObject->getFulfillment($user)->setComplete(TRUE)->save();
       break;
     }
   }
