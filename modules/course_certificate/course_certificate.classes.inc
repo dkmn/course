@@ -5,7 +5,7 @@ class CourseObjectCertificate extends CourseObject {
   public function take() {
     // Fulfill immediately.
     $this->getFulfillment()->setComplete(1)->save();
-    return l('Download certificate', "node/" . $this->getCourseNid() . "/certificate");
+    return l(t('Download certificate'), "node/" . $this->getCourseNid() . "/certificate");
   }
 
   public function optionsDefinition() {

@@ -137,7 +137,7 @@ function course_outline_overview_form($form, &$form_state) {
 
   // Add object button and select box for new objects.
   $object_types = array(
-    '' => '- select object -',
+    '' => '- ' . t('select object') . ' -',
   );
   foreach ($handlers as $module => $object_definitions) {
     if ($object_definitions) {
@@ -530,7 +530,7 @@ function course_completion_page($course_node) {
       $status_css = $req->isComplete() ? 'complete' : 'incomplete';
       $status_img = $req->isComplete() ? 'ok' : ($req->getCourseObject()->isRequired() ? 'error' : 'warning');
       $status_class = 'course-complete-item-' . $status_img;
-      $status_optional = ' ' . (!$req->getCourseObject()->isRequired() ? '(optional)' : '(required)');
+      $status_optional = ' (' . (!$req->getCourseObject()->isRequired() ? t('optional') : t('required')) . ')';
       if ($courseObject->access('take')) {
         $link = l($req->getCourseObject()->getTitle(), $courseObject->getUrl());
       }

@@ -188,10 +188,10 @@ class CourseObjectQuiz extends CourseObjectNode {
     $summary = parent::getOptionsSummary();
     if ($this->getInstanceId()) {
       if (course_quiz_quiz_version() >= 5) {
-        $summary['questions'] = l('Edit questions', "node/{$this->getInstanceId()}/quiz/questions");
+        $summary['questions'] = l(t('Edit questions'), "node/{$this->getInstanceId()}/quiz/questions");
       }
       else {
-        $summary['questions'] = l('Edit questions', "node/{$this->getInstanceId()}/questions");
+        $summary['questions'] = l(t('Edit questions'), "node/{$this->getInstanceId()}/questions");
       }
     }
     return $summary;

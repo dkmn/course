@@ -55,7 +55,7 @@ class CourseReport extends CourseHandler {
     if ($required_complete >= $required) {
       // Course requirements have been met.
       $this->setOption('section', 'complete');
-      $this->setOption('section_name', 'Complete');
+      $this->setOption('section_name', t('Complete'));
       $this->setOption('complete', 1);
       if (!$this->getOption('date_completed')) {
         $this->setOption('date_completed', REQUEST_TIME);
