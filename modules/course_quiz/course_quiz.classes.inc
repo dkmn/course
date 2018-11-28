@@ -38,13 +38,12 @@ class CourseObjectQuiz extends CourseObjectNode {
     $fulfillment->setOption('instance', $rid);
     $fulfillment->setOption('quiz_result_ids', $result_ids);
 
-    $results = quiz_get_score_data(array($nid), $user->uid);
-    $result = reset($results);
-    if ($result && ($result->percent_score >= $this->getOption('passing_grade'))) {
-      $fulfillment->setGrade($result->percent_score)->setComplete()->save();
+    $result = quiz_result_load($rid);
+    if ($result && ($result->score >= $this->getOption('passing_grade'))) {
+      $fulfillment->setGrade($result->score)->setComplete()->save();
     }
     else {
-      $fulfillment->setGrade($result->percent_score)->save();
+      $fulfillment->setGrade($result->score)->save();
     }
   }
 
